@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import requests
-import hashlib
 import pickle
 import os.path
 from urllib.parse import urljoin
@@ -22,17 +21,31 @@ class dpid:
         url = urljoin(dpid.BASE_URL.format(
             resolver=resolver), dpid_path + '?raw')
 
-        response = requests.get(url)
+        # make a HEAD request to fetch the headers and get the ETag containing the content hash
+        session = requests.Session()
+        response = session.head(url, allow_redirects=True)
+        etag = response.headers.get('ETag')
 
-        # generate a unique hash for the content to use as the cache key
-        content_hash = hashlib.md5(response.content).hexdigest()
-        cache_file = f'cache/{content_hash}'
+        # if the ETag header is not present, raise an exception
+        if etag is None:
+            raise ValueError("ETag header not present in response")
+
+        # handle 'weak' ETags, which are prefixed by 'W/'
+        if etag.startswith('W/'):
+            # remove the first 3 characters ('W/"') and the last character ('"')
+            etag = etag[3:-1]
+
+        # use the ETag as the cache key
+        cache_file = f'cache/{etag}'
 
         # check if the cache option is enabled and the data is already cached
         if options.get('cache', False) and os.path.isfile(cache_file):
             print(f"Loading {dpid_path} from cache")
             with open(cache_file, 'rb') as file:
                 return pickle.load(file)
+
+        # if the data is not in the cache, make a GET request to fetch the data
+        response = requests.get(url)
 
         # get the final URL after all redirects
         final_url = response.url
