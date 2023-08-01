@@ -75,3 +75,34 @@ class dpid:
                 pickle.dump(result, file)
 
         return result
+
+    @staticmethod
+    def toCid(dpid_path, options={}):
+        # handle the 'resolver' option
+        resolver = options.get('resolver', 'beta')
+        if resolver not in dpid.RESOLVERS:
+            raise ValueError("Invalid resolver option")
+
+        # form the final URL by combining the base URL with the provided dpid path
+        url = urljoin(dpid.BASE_URL.format(
+            resolver=resolver), dpid_path + '?raw')
+
+        # make a HEAD request to fetch the headers and get the ETag containing the content hash
+        session = requests.Session()
+        response = session.head(url, allow_redirects=True)
+        etag = response.headers.get('ETag')
+
+        # if the ETag header is not present, raise an exception
+        if etag is None:
+            raise ValueError("ETag header not present in response")
+
+        # handle 'weak' ETags, which are prefixed by 'W/'
+        if etag.startswith('W/'):
+            # remove the first 3 characters ('W/"') and the last character ('"')
+            etag = etag[3:-1]
+        else:
+            # remove the first character ('"') and the last character ('"')
+            etag = etag[1:-1]
+
+        # return the ETag as the CID
+        return etag
